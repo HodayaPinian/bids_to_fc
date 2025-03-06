@@ -1,7 +1,8 @@
-mne
-mne-bids
 numpy
 pandas
 scipy
+mne
+mne-bids
+openneuro-py
 matplotlib
 seaborn

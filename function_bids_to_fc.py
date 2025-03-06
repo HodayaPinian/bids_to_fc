@@ -5,6 +5,7 @@ import scipy
 
 import seaborn as sns
 import mne_connectivity
+from mne_bids import BIDSPath, read_raw_bids
 
 
 
@@ -156,3 +157,68 @@ def Preprocessing_mne(raw):
     
     return raw
     
+def process_subject(sub, bids_path, tasks, filter_by_band):
+    """
+    Process a single subject across all tasks.
+    """
+    for task in tasks:
+        try:
+            process_task(sub, task, bids_path, filter_by_band)
+        except (IndexError, ValueError) as error:
+            print(f'Error processing subject {sub}, task {task}:', error)
+            continue
+
+def process_task(sub, task, bids_path, filter_by_band):
+    """
+    Process functional connectivity for a single subject and task.
+    """
+    bids_path = update_path(bids_path, sub, task)
+    raw = read_raw_bids(bids_path=bids_path, extra_params=dict(preload=True), verbose=False) # Load bids data to MNE
+    raw = Preprocessing_mne(raw)  # Preprocessing
+    ch_names = raw.ch_names  # Extract channel names
+
+    if filter_by_band:
+        fc, flatten_fc = functional_connectivity_by_freq_bands(raw)
+        for i, band in enumerate(freq):
+            save_name = f'FC_figures_by_frequency_bands/sub_{sub}_{task}_{band}_coherence.png'
+            plot_and_save(fc[i, :, :], ch_names, save_name)
+        flatten_fc.to_csv(f'FC_matrix_by_frequency_bands/flatten_sub_{sub}_{task}_coherence.csv')
+    else:
+        fc, flatten_fc = functional_connectivity(raw)
+        pd.DataFrame(fc, index=ch_names, columns=ch_names).to_csv(f'FC_matrix/sub_{sub}_{task}_coherence.csv')
+        pd.DataFrame(flatten_fc, index=ch_names, columns=ch_names).to_csv(f'FC_matrix/flatten_sub_{sub}_{task}_coherence.csv')
+        plot_and_save(fc, ch_names, f'FC_figures/sub_{sub}_{task}_coherence.png')
+
+def process_subject_time_based(sub, bids_path, tasks, filter_by_band, delta_t=1):
+    """
+    Process functional connectivity for a single subject across all tasks in time segments.
+    """
+    for task in tasks:
+        try:
+            process_task_time_based(sub, task, bids_path, filter_by_band, delta_t)
+        except (IndexError, ValueError) as error:
+            print(f'Error processing subject {sub}, task {task}:', error)
+            continue
+
+def process_task_time_based(sub, task, bids_path, filter_by_band, delta_t):
+    """
+    Process functional connectivity for a single subject and task over time segments.
+    """
+    bids_path = update_path(bids_path=bids_path, sub=sub, task=task)
+    base_raw = read_raw_bids(bids_path=bids_path, extra_params=dict(preload=True), verbose=False)
+    base_raw = Preprocessing_mne(base_raw)
+    ch_names = base_raw.ch_names
+    flatten_df = pd.DataFrame()
+
+    for i in range(int(base_raw.times[-1])):
+        raw = base_raw.copy().crop(i, i + delta_t)
+        if filter_by_band:
+            fc, flatten_fc = functional_connectivity_by_freq_bands(raw)
+            flatten_df = pd.concat([flatten_df, flatten_fc]) if not flatten_df.empty else flatten_fc
+        else:
+            fc, flatten_fc = functional_connectivity(raw, welch=False)
+            flatten_df = flatten_df.append(flatten_fc, ignore_index=True)
+
+    output_path = f'FC_matrix_time_range/all_time_flatten_sub_{sub}_{task}_coherence.csv'
+    flatten_df.to_csv(output_path)
+    print(f"Saved time-resolved connectivity matrix for {sub}, {task}: {output_path}")

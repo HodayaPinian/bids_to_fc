@@ -34,6 +34,7 @@ The required Python packages are listed in `requirements.txt`:
 - `numpy`
 - `pandas`
 - `scipy`
+- `openneuro-py`
 - `matplotlib`
 - `seaborn`
 
